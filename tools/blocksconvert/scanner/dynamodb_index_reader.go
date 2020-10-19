@@ -83,30 +83,44 @@ func (r *dynamoDbIndexReader) ReadIndexEntries(ctx context.Context, tableName st
 
 			level.Info(r.log).Log("msg", "reading rows", "segment", currentSegment)
 
-			result, err := client.ScanWithContext(gctx, &dynamodb.ScanInput{
-				Segment:                   awssdk.Int64(currentSegment),
-				TableName:                 awssdk.String(tableName),
-				TotalSegments:             awssdk.Int64(segmentsPerProcessor),
-			})
-			if err != nil {
-				return err
-			}
+			var result *dynamodb.ScanOutput
 
-			for _, row := range result.Items {
-				entries, err := parseDynamoDbRow(row, tableName)
+			for {
+				scanInput := &dynamodb.ScanInput{
+					Segment:                   awssdk.Int64(currentSegment),
+					TableName:                 awssdk.String(tableName),
+					TotalSegments:             awssdk.Int64(segmentsPerProcessor),
+				}
+
+				if result != nil && result.LastEvaluatedKey != nil {
+					scanInput.ExclusiveStartKey = result.LastEvaluatedKey
+				}
+
+				result, err := client.ScanWithContext(gctx, scanInput)
 				if err != nil {
-					return errors.Wrapf(err, "failed to parse row: %s", *row["h"].S)
+					return err
 				}
 
-				for _, e := range entries {
-					err := p.ProcessIndexEntry(e)
+				for _, row := range result.Items {
+					entries, err := parseDynamoDbRow(row, tableName)
 					if err != nil {
-						return errors.Wrap(err, "processor error")
+						return errors.Wrapf(err, "failed to parse row: %s", *row["h"].S)
 					}
+
+					for _, e := range entries {
+						err := p.ProcessIndexEntry(e)
+						if err != nil {
+							return errors.Wrap(err, "processor error")
+						}
+					}
+
+					r.parsedIndexEntries.Add(float64(len(entries)))
+					r.rowsRead.Inc()
 				}
 
-				r.parsedIndexEntries.Add(float64(len(entries)))
-				r.rowsRead.Inc()
+				if result != nil && result.LastEvaluatedKey == nil {
+					break
+				}
 			}
 
 			return p.Flush()
