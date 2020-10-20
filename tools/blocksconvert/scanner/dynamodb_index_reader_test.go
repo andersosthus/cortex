@@ -13,7 +13,7 @@ import (
 
 func TestParseDynamoDbRow(t *testing.T) {
 	tcs := map[string]struct {
-		row   map[string]*dynamodb.AttributeValue
+		row map[string]*dynamodb.AttributeValue
 
 		table string
 
@@ -25,7 +25,7 @@ func TestParseDynamoDbRow(t *testing.T) {
 				"h": &dynamodb.AttributeValue{
 					S: aws.String("testuser:d18446:ebYAZVS9yuA8K4VQnZU1ldJL5gUnOVF5PDe4i/6AFW0"),
 				},
-				"r":&dynamodb.AttributeValue{
+				"r": &dynamodb.AttributeValue{
 					B: []byte("MDMwODY4ZTYAADAvZGNkMzg2MGRiY2JkYWUyNjoxNzMxM2I4NGYxNjoxNzMxNTAxNzBlNjplMmMwY2VkMgAzAA=="),
 				},
 				"c": &dynamodb.AttributeValue{

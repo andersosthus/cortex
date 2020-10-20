@@ -27,7 +27,7 @@ import (
 )
 
 type dynamoDbIndexReader struct {
-	log      log.Logger
+	log    log.Logger
 	awsCfg aws.StorageConfig
 
 	rowsRead                  prometheus.Counter
@@ -38,7 +38,7 @@ type dynamoDbIndexReader struct {
 
 func newDynamoDbIndexReader(awsCfg aws.StorageConfig, l log.Logger, rowsRead prometheus.Counter, parsedIndexEntries prometheus.Counter, currentTableRanges, scannedRanges prometheus.Gauge) *dynamoDbIndexReader {
 	return &dynamoDbIndexReader{
-		log:      l,
+		log:    l,
 		awsCfg: awsCfg,
 
 		rowsRead:                  rowsRead,
@@ -57,7 +57,7 @@ func (r *dynamoDbIndexReader) IndexTableNames(ctx context.Context) ([]string, er
 
 	result, err := client.ListTables(&dynamodb.ListTablesInput{})
 
-	tables := make([]string, len(result.TableNames) -1)
+	tables := make([]string, len(result.TableNames)-1)
 	for _, table := range result.TableNames {
 		tables = append(tables, *table)
 	}
@@ -71,25 +71,24 @@ func (r *dynamoDbIndexReader) ReadIndexEntries(ctx context.Context, tableName st
 		return errors.Wrap(err, "create dynamodb client failed")
 	}
 
-	var segmentsPerProcessor int64 = 1
-
 	g, gctx := errgroup.WithContext(ctx)
+	totalSegments := int64(len(processors))
 
 	for ix := range processors {
-		p := processors[ix]
+		currentSegment := int64(ix)
+		pIdx := ix
 
 		g.Go(func() error {
-			var currentSegment int64 = 0
-
+			p := processors[pIdx]
 			level.Info(r.log).Log("msg", "reading rows", "segment", currentSegment)
 
 			var result *dynamodb.ScanOutput
 
 			for {
 				scanInput := &dynamodb.ScanInput{
-					Segment:                   awssdk.Int64(currentSegment),
-					TableName:                 awssdk.String(tableName),
-					TotalSegments:             awssdk.Int64(segmentsPerProcessor),
+					Segment:       awssdk.Int64(currentSegment),
+					TableName:     awssdk.String(tableName),
+					TotalSegments: awssdk.Int64(totalSegments),
 				}
 
 				if result != nil && result.LastEvaluatedKey != nil {
@@ -100,6 +99,8 @@ func (r *dynamoDbIndexReader) ReadIndexEntries(ctx context.Context, tableName st
 				if err != nil {
 					return err
 				}
+
+				level.Debug(r.log).Log("msg", "got rows for processor", "segment", currentSegment, "processor", pIdx, "rows", result.Count)
 
 				for _, row := range result.Items {
 					entries, err := parseDynamoDbRow(row, tableName)
